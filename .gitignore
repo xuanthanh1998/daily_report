@@ -1,0 +1,9 @@
+node_modules
+
+.idea
+.env
+public
+package-lock.json
+.prettierrc
+.vscode/settings.json
+/logs
