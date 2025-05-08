@@ -1,5 +1,6 @@
 import { Sequelize, DataTypes, Optional } from 'sequelize';
 import { sequelize } from '../config/mysql';
+import {Class} from "./class";
 
 export interface studentAttributes {
   id: number;
@@ -55,6 +56,10 @@ export const Student = sequelize.define('Student', {
     allowNull: true,
   },
   user_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
+  school_id: {
     type: DataTypes.INTEGER,
     allowNull: true,
   },
