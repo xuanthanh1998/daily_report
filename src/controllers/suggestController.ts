@@ -3,16 +3,19 @@ import {getCollection} from '../config/mongo';
 import {sendData, sendError} from '../ultil/ultil';
 import {ObjectId} from 'mongodb';
 
-export const getSuggestByTeacher = async (req: Request, res: Response): Promise<void> => {
+//lấy danh sách gợi ý từng giáo viên
+export const getSuggestByTeacher = async (req: Request, res: Response): Promise<any> => {
     try {
         const collection = await getCollection('suggest');
-
+        const type = parseInt(req.query.type as string);
         const teacherId = parseInt(req.query.teacher_id as string);
-        if (isNaN(teacherId)) {
-            sendError(res, 'teacher_id is required', 1);
+        if (isNaN(teacherId) || isNaN(type)) {
+            return res.status(400).json({
+                error_code: 1,
+                message: 'Invalid query parameters'
+            });
         }
 
-        const type = parseInt(req.query.type as string);
         const data = await collection.find({
             type: type,
             $or: [
@@ -28,6 +31,7 @@ export const getSuggestByTeacher = async (req: Request, res: Response): Promise<
     }
 };
 
+//tạo gợi ý cho giáo viên
 export const createSuggestByTeacher = async (req: Request, res: Response): Promise<void> => {
     try {
         const collection = await getCollection('suggest');
@@ -49,6 +53,7 @@ export const createSuggestByTeacher = async (req: Request, res: Response): Promi
     }
 };
 
+// cập nhật gợi ý giáo viên
 export const updateSuggestByTeacher = async (req: Request, res: Response): Promise<void> => {
     try {
         const collection = await getCollection('suggest');
@@ -73,6 +78,7 @@ export const updateSuggestByTeacher = async (req: Request, res: Response): Promi
     }
 };
 
+//xóa gợi ý giáo viên
 export const deleteSuggestByTeacher = async (req: Request, res: Response): Promise<void> => {
     try {
         const {ids} = req.body;

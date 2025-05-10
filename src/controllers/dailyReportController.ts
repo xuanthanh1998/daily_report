@@ -2,19 +2,18 @@ import {Request, Response} from 'express';
 import {getCollection} from '../config/mongo';
 import {sendData} from "../ultil/ultil";
 import {Student} from '../models/student';
-import {Teacher} from '../models/teacher';
 import {Class} from '../models/class';
 import {User} from '../models/users';
 import {School} from '../models/school';
 import '../models/associations';
-import {SchoolPrincipal} from "../models/school_principal";
+import {PgStatisticsByClass} from '../models/postgres/PgStatisticsByClass';
 
 //gửi nhận xét hàng ngày
-export const sendDailyReport = async (req: Request, res: Response): Promise<void> => {
+export const sendDailyReport = async (req: Request, res: Response): Promise<any> => {
     try {
         const reports = req.body;
 
-        if (!Array.isArray(reports) || reports.length === 0) {
+        if (!Array.isArray(reports) || reports.length === 0 || isNaN(reports[0].student_id)) {
             res.status(400).json({error_code: 1, message: 'Invalid or empty report list'});
         }
 
@@ -23,44 +22,54 @@ export const sendDailyReport = async (req: Request, res: Response): Promise<void
 
         for (const report of reports) {
             try {
-                console.log('report', report);
-                const dataReport = await collection.findOne({
+                const existing = await collection.findOne({
                     student_id: report.student_id,
                     date_report: new Date(report.date_report),
                     teacher_id: report.teacher_id
                 });
-                console.log('dataReport', dataReport);
-                if (dataReport) {
+
+                if (existing) {
                     const updateFields: any = {};
 
-                    if (report.study_report !== undefined) {
-                        updateFields.study_report = report.study_report;
-                    }
+                    if (report.study_report !== undefined) updateFields.study_report = report.study_report;
+                    if (report.other_report !== undefined) updateFields.other_report = report.other_report;
 
-                    if (report.other_report !== undefined) {
-                        updateFields.other_report = report.other_report;
-                    }
-
-                    const dataUpdate = await collection.findOneAndUpdate(
-                        {_id: dataReport._id},
-                        {
-                            $set: updateFields
-                        },
+                    await collection.findOneAndUpdate(
+                        {_id: existing._id},
+                        {$set: updateFields},
                         {returnDocument: 'after'}
                     );
-                    sendData(res, dataUpdate, 'update completed');
+
+                    insertedResults.push({success: true, type: 'updated', _id: existing._id});
                 } else {
-                    const result = await collection.insertOne({
-                        study_report: report.study_report,
-                        other_report: report.other_report,
-                        date_report: new Date(report.date_report),
-                        student_id: report.student_id,
-                        teacher_id: report.teacher_id,
-                        class_id: report.class_id,
-                        create_datetime: new Date(),
-                        update_datetime: new Date(),
-                    });
-                    insertedResults.push({success: true, insertedId: result.insertedId});
+                    const dataClass: any = await Class.findOne({
+                        where: {id: report.class_id}
+                    })
+                    if (!dataClass) {
+                        res.status(400).json({error_code: 1, message: 'not found class'});
+                    } else {
+                        const result = await collection.insertOne({
+                            study_report: report.study_report,
+                            other_report: report.other_report,
+                            date_report: new Date(report.date_report),
+                            student_id: report.student_id,
+                            teacher_id: report.teacher_id,
+                            class_id: report.class_id,
+                            create_datetime: new Date(),
+                            update_datetime: new Date(),
+                        });
+
+                        await PgStatisticsByClass.create({
+                            class_id: report.class_id,
+                            teacher_id: report.teacher_id,
+                            school_id: dataClass.school_id,
+                            date_report: new Date(report.date_report),
+                            create_datetime: new Date(),
+                            update_datetime: new Date(),
+                        });
+
+                        insertedResults.push({success: true, type: 'inserted', insertedId: result.insertedId});
+                    }
                 }
             } catch (err) {
                 insertedResults.push({success: false, error: 'Failed to insert reports', report});
@@ -73,16 +82,34 @@ export const sendDailyReport = async (req: Request, res: Response): Promise<void
 };
 
 //phụ huynh xem nhận xét hàng ngày
-export const getDailyReportsByParent = async (req: Request, res: Response) => {
+export const getDailyReportsByParent = async (req: Request, res: Response): Promise<any> => {
     try {
         const studentId = parseInt(req.query.student_id as string, 10);
         const dateReport = new Date(req.query.date_report as string);
+        if (isNaN(studentId) || isNaN(dateReport.getTime())) {
+            return res.status(400).json({
+                error_code: 1,
+                message: 'Invalid query parameters'
+            });
+        }
 
         const collection = await getCollection('daily_report');
-        const reports = await collection.find({
-            student_id: studentId,
-            date_report: dateReport
-        }).toArray();
+        const reports = await collection.find(
+            {
+                student_id: studentId,
+                date_report: dateReport
+            },
+            {
+                projection: {
+                    _id: 0,
+                    class_id: 1,
+                    teacher_id: 1,
+                    study_report: 1,
+                    other_report: 1,
+                    date_report: 1
+                }
+            }
+        ).toArray();
 
         const teacherIDs = reports.map(r => r.teacher_id);
         const [teachers] = await Promise.all([
@@ -165,14 +192,15 @@ export const getDailyReportsByTeacher = async (req: Request, res: Response): Pro
     }
 };
 
-
+//lãnh đạo xem thống kê nhận xét hàng ngày của từng lớp
 export const getDailyReportsByPrincipal = async (req: Request, res: Response): Promise<any> => {
     try {
         const dateReport = new Date(req.query.date_report as string);
         const userID = parseInt(req.query.user_id as string, 10);
+        const schoolID = parseInt(req.query.school_id as string, 10);
         const collection = await getCollection('daily_report');
 
-        if (isNaN(userID) || isNaN(dateReport.getTime())) {
+        if (isNaN(userID) || isNaN(dateReport.getTime()) || isNaN(schoolID)) {
             return res.status(400).json({
                 error_code: 1,
                 message: 'Invalid query parameters'
@@ -180,14 +208,15 @@ export const getDailyReportsByPrincipal = async (req: Request, res: Response): P
         }
 
         const dataClass: any = await School.findOne({
+            where: {id: schoolID},
             attributes: ['id', 'name'],
             include: [
                 {
                     model: User,
                     as: 'principals',
-                    where: { id: userID },
+                    where: {id: userID},
                     attributes: [],
-                    through: { attributes: [] }
+                    through: {attributes: []}
                 },
                 {
                     model: Class,
@@ -205,7 +234,7 @@ export const getDailyReportsByPrincipal = async (req: Request, res: Response): P
         });
 
         if (!dataClass) {
-            return res.status(404).json({ error_code: 2, message: 'School not found or no classes' });
+            return res.status(404).json({error_code: 2, message: 'School not found or no classes'});
         }
 
         const dataJSON = dataClass.toJSON();
@@ -243,8 +272,9 @@ export const getDailyReportsByPrincipal = async (req: Request, res: Response): P
 
         sendData(res, result, 'Success');
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error_code: 1, message: 'Failed' });
+        res.status(500).json({error_code: 1, message: 'Failed'});
     }
 };
+
+//
 

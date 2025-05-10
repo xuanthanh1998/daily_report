@@ -3,10 +3,14 @@ import {Student} from './student';
 import {User} from "./users";
 import {School} from "./school";
 import {SchoolPrincipal} from "./school_principal";
+import {Teacher} from "./teacher";
 
 Class.hasMany(Student, {foreignKey: 'class_id', as: 'students'});
 Class.belongsTo(User, {foreignKey: 'teacher_id', as: 'teacher'});
+Class.belongsTo(School, {foreignKey: 'school_id', as: 'school'});
+
 Student.belongsTo(Class, {foreignKey: 'class_id'});
+Teacher.belongsTo(User, {foreignKey: 'user_id', as: 'teachers'});
 
 School.belongsToMany(User, {
     through: SchoolPrincipal,
@@ -35,5 +39,3 @@ School.hasMany(Class, {
     foreignKey: 'school_id',
     as: 'class'
 });
-
-Class.belongsTo(School, {foreignKey: 'school_id'});

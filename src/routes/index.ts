@@ -1,5 +1,4 @@
 import express, {Router} from 'express';
-import {getListStudentByClass} from '../controllers/studentController';
 import {
     createSuggestByTeacher,
     deleteSuggestByTeacher,
@@ -12,10 +11,10 @@ import {
     getDailyReportsByTeacher,
     sendDailyReport
 } from "../controllers/dailyReportController";
+import {statisticDailyReportByClass, statisticDailyReportByTeacher} from "../controllers/statisticController";
+import {getListClassByTeacher, getListSchoolByPrincipal} from "../controllers/teacherController";
 
 const router: Router = express.Router();
-
-router.get('/list-student', getListStudentByClass);
 
 //api suggest
 router.get('/list-suggest-by-teacher', getSuggestByTeacher);
@@ -29,5 +28,9 @@ router.get('/get-daily-report-by-parent', getDailyReportsByParent);
 router.get('/get-daily-report-by-teacher', getDailyReportsByTeacher);
 router.get('/get-daily-report-by-principal', getDailyReportsByPrincipal);
 
-
+router.get('/get-list-school-by-principal', getListSchoolByPrincipal)
+router.get('/get-list-class-by-teacher', getListClassByTeacher)
+//api thống kê
+router.get('/statistic-daily-report-teacher', statisticDailyReportByTeacher);
+router.get('/statistic-daily-report-class', statisticDailyReportByClass);
 export default router;

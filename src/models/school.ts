@@ -8,6 +8,7 @@ export interface schoolAttributes {
     country?: string;
     city?: string;
     address?: string;
+    type?: number;
     create_datetime?: Date;
     update_datetime?: Date;
 }
@@ -19,6 +20,7 @@ export type schoolOptionalAttributes =
     | "city"
     | "address"
     | "create_datetime"
+    | "type"
     | "update_datetime";
 export type schoolCreationAttributes = Optional<schoolAttributes, schoolOptionalAttributes>;
 
@@ -44,6 +46,11 @@ export const School = sequelize.define('School', {
     address: {
         type: DataTypes.STRING(255),
         allowNull: true
+    },
+    type: {
+        type: DataTypes.TINYINT,
+        allowNull: true,
+        comment: 'Loại trường 0: mầm non, 1: tiểu học, 2: THCS, 3: THPT',
     },
     create_datetime: {
         type: DataTypes.DATE,
