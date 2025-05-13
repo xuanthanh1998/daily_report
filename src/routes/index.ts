@@ -11,7 +11,11 @@ import {
     getDailyReportsByTeacher,
     sendDailyReport
 } from "../controllers/dailyReportController";
-import {statisticDailyReportByClass, statisticDailyReportByTeacher} from "../controllers/statisticController";
+import {
+    statisticDailyReportByClass,
+    statisticDailyReportByTeacher,
+    getSystemStatistic, reportViewByClass,
+} from "../controllers/statisticController";
 import {getListClassByTeacher, getListSchoolByPrincipal} from "../controllers/teacherController";
 
 const router: Router = express.Router();
@@ -33,4 +37,6 @@ router.get('/get-list-class-by-teacher', getListClassByTeacher)
 //api thống kê
 router.get('/statistic-daily-report-teacher', statisticDailyReportByTeacher);
 router.get('/statistic-daily-report-class', statisticDailyReportByClass);
+router.get('/system-statistic', getSystemStatistic);
+router.get('/report-view-by-class', reportViewByClass);
 export default router;

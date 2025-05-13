@@ -7,6 +7,7 @@ import {User} from '../models/users';
 import {School} from '../models/school';
 import '../models/associations';
 import {PgStatisticsByClass} from '../models/postgres/PgStatisticsByClass';
+import {PgCommentViews} from '../models/postgres/PgCommentViews';
 
 //gửi nhận xét hàng ngày
 export const sendDailyReport = async (req: Request, res: Response): Promise<any> => {
@@ -111,22 +112,49 @@ export const getDailyReportsByParent = async (req: Request, res: Response): Prom
             }
         ).toArray();
 
-        const teacherIDs = reports.map(r => r.teacher_id);
-        const [teachers] = await Promise.all([
-            User.findAll({where: {id: teacherIDs}, attributes: ['name', 'id']})
-        ]);
+        if (!reports || reports.length === 0) {
+            return res.status(404).json({error_code: 2, message: 'No reports found'});
+        } else {
+            const teacherIDs = reports.map(r => r.teacher_id);
+            const [teachers] = await Promise.all([
+                User.findAll({where: {id: teacherIDs}, attributes: ['name', 'id']})
+            ]);
 
-        const teacherMap = new Map<number, any>();
-        teachers.forEach((s: any) => {
-            teacherMap.set(Number(s.id), s);
-        });
+            const teacherMap = new Map<number, any>();
+            teachers.forEach((s: any) => {
+                teacherMap.set(Number(s.id), s);
+            });
 
-        const dataReports = reports.map(r => ({
-            ...r,
-            teacher: teacherMap.get(r.teacher_id) || null
-        }));
-        sendData(res, dataReports, 'Success');
+            const dataReports = reports.map(r => ({
+                ...r,
+                teacher: teacherMap.get(r.teacher_id) || null
+            }));
+
+            const dataStudent: any = await Student.findOne({
+                where: {id: studentId},
+            })
+            const dataCommentView = await PgCommentViews.findOne({
+                where: {
+                    class_id: dataStudent.class_id,
+                    school_id: dataStudent.school_id,
+                    view_date: dateReport,
+                }
+            })
+            console.log('ạhsdkjsahdk', dataCommentView)
+            if (!dataCommentView) {
+                await PgCommentViews.create({
+                    class_id: dataStudent.class_id,
+                    student_id: studentId,
+                    school_id: dataStudent.school_id,
+                    view_date: new Date(),
+                    create_datetime: new Date(),
+                    update_datetime: new Date(),
+                })
+            }
+            sendData(res, dataReports, 'Success');
+        }
     } catch (error) {
+        console.log(error)
         res.status(500).json({error_code: 1, message: 'Failed'});
     }
 };
@@ -275,6 +303,4 @@ export const getDailyReportsByPrincipal = async (req: Request, res: Response): P
         res.status(500).json({error_code: 1, message: 'Failed'});
     }
 };
-
-//
 

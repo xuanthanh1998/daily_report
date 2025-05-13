@@ -1,5 +1,4 @@
 import {Request, Response} from 'express';
-import {getCollection} from '../config/mongo';
 import {sendData, sendError} from '../ultil/ultil';
 import {User} from "../models/users";
 import {Teacher} from "../models/teacher";
@@ -8,6 +7,7 @@ import {School} from "../models/school";
 import '../models/associations';
 import {Op} from "sequelize";
 import {Class} from "../models/class";
+import {PgCommentViews} from "../models/postgres/PgCommentViews";
 
 //thống kê theo danh sách lớp
 export const statisticDailyReportByClass = async (req: Request, res: Response) => {
@@ -120,5 +120,113 @@ export const statisticDailyReportByTeacher = async (req: Request, res: Response)
     }
 };
 
-//thống kê top 5 trường
 
+//Thống kê chung của hệ thống
+export const getSystemStatistic = async (req: Request, res: Response): Promise<any> => {
+    try {
+        const startDate = new Date(req.query.start_date as string);
+        const endDate = new Date(req.query.end_date as string);
+
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+            return res.status(400).json({error_code: 1, message: 'Invalid date range'});
+        }
+
+        const reportData = await PgStatisticsByClass.findAll({
+            where: {
+                date_report: {
+                    [Op.between]: [startDate, endDate]
+                }
+            }
+        });
+
+        const dataSchool: any[] = await School.findAll({
+            attributes: ['id', 'name'],
+        });
+
+        const schoolMap = new Map<number, string>();
+        for (const school of dataSchool) {
+            schoolMap.set(school.id, school.name);
+        }
+
+        const uniqueReportSet = new Set<string>();
+        const schoolCountMap = new Map<number, { school_name: string; count: number }>();
+
+        for (const report of reportData as any[]) {
+            const key = `${report.school_id}-${report.teacher_id}-${report.class_id}-${new Date(report.date_report).toISOString().split('T')[0]}`;
+
+            if (!uniqueReportSet.has(key)) {
+                uniqueReportSet.add(key);
+
+                const schoolId = report.school_id;
+                const schoolName = schoolMap.get(schoolId) || 'Unknown';
+
+                if (!schoolCountMap.has(schoolId)) {
+                    schoolCountMap.set(schoolId, {school_name: schoolName, count: 0});
+                }
+
+                schoolCountMap.get(schoolId)!.count += 1;
+            }
+        }
+
+        const topSchools = Array.from(schoolCountMap.entries())
+            .sort((a, b) => b[1].count - a[1].count)
+            .slice(0, 5)
+            .map(([school_id, data]) => ({
+                school_id,
+                school_name: data.school_name,
+                report_count: data.count
+            }));
+
+        sendData(res, topSchools, 'Top 5 schools with most reports');
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({error_code: 1, message: 'Failed to get top schools'});
+    }
+};
+
+//thống kê lượt xem theo danh sách lớp
+export const reportViewByClass = async (req: Request, res: Response): Promise<any> => {
+    try {
+        const startDate = new Date(req.query.start_date as string);
+        const endDate = new Date(req.query.end_date as string);
+        const schoolID = parseInt(req.query.school_id as string, 10);
+
+        if (isNaN(schoolID) || isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+            return res.status(400).json({ error_code: 1, message: 'Invalid or empty report list' });
+        }
+
+        const reportData = await PgCommentViews.findAll({
+            where: {
+                view_date: {
+                    [Op.between]: [startDate, endDate]
+                },
+                ...(schoolID && { school_id: schoolID }),
+            }
+        });
+
+        const classInfo = await Class.findAll({
+            where: { school_id: schoolID },
+            attributes: ['id', 'name']
+        });
+
+        const classViewMap = new Map<number, number>();
+        for (const report of reportData as any[]) {
+            const classId = report.class_id;
+            classViewMap.set(classId, (classViewMap.get(classId) || 0) + 1);
+        }
+
+        const result = classInfo.map(cls => {
+            const clsData = cls.toJSON();
+            return {
+                class_id: clsData.id,
+                class_name: clsData.name,
+                view_count: classViewMap.get(clsData.id) || 0
+            };
+        });
+
+        sendData(res, result, 'Success');
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error_code: 1, message: 'Failed' });
+    }
+};
