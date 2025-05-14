@@ -107,14 +107,14 @@ export const getDailyReportsByParent = async (req: Request, res: Response): Prom
         const reports = await DailyReport.find({
             student_id: studentId,
             date_report: dateReport,
-        }).lean();
+        }).lean() as unknown as IDailyReport[];
 
         if (!reports || reports.length === 0) {
             res.status(404).json({error_code: 2, message: 'No reports found'});
             return;
         }
 
-        const teacherIDs = reports.map((r) => r.teacher_id);
+        const teacherIDs = reports.map(r => r.teacher_id);
 
         const [teachers, dataStudent] = await Promise.all([
             User.findAll({
