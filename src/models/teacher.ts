@@ -1,14 +1,16 @@
 import * as Sequelize from 'sequelize';
 import {DataTypes, Model, Optional} from 'sequelize';
 import {sequelize} from "../config/mysql";
+import {usersAttributes} from "./users";
 
 export interface teacherAttributes {
     id: number;
-    user_id?: number;
+    user_id: number;
     teacher_code?: number;
     school_id?: number;
     create_datetime?: Date;
     update_datetime?: Date;
+    teachers?: usersAttributes;
 }
 
 export type teacherOptionalAttributes =

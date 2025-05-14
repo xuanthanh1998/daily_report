@@ -10,6 +10,7 @@ export interface studentAttributes {
   student_code?: number;
   class_id?: number;
   user_id?: number;
+  school_id?: number;
   create_datetime?: Date;
   update_datetime?: Date;
 }
@@ -22,6 +23,7 @@ export type studentOptionalAttributes =
     | 'student_code'
     | 'class_id'
     | 'user_id'
+    | 'school_id'
     | 'create_datetime'
     | 'update_datetime';
 

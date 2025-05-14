@@ -1,13 +1,14 @@
 import {Request, Response} from 'express';
 import {sendData, sendError} from '../ultil/ultil';
 import {User} from "../models/users";
-import {Teacher} from "../models/teacher";
+import {Teacher, teacherAttributes} from "../models/teacher";
 import {PgStatisticsByClass} from '../models/postgres/PgStatisticsByClass';
-import {School} from "../models/school";
+import {School, schoolAttributes} from "../models/school";
 import '../models/associations';
 import {Op} from "sequelize";
 import {Class} from "../models/class";
 import {PgCommentViews} from "../models/postgres/PgCommentViews";
+import {PgCommentViewsItf, PgStatisticsByClassItf} from "./Interface";
 
 //thống kê theo danh sách lớp
 export const statisticDailyReportByClass = async (req: Request, res: Response) => {
@@ -26,7 +27,7 @@ export const statisticDailyReportByClass = async (req: Request, res: Response) =
                 },
                 ...(schoolID && {school_id: schoolID}),
             }
-        });
+        }) as unknown as PgStatisticsByClassItf[];
 
         const classInfo = await Class.findAll({
             where: {school_id: schoolID},
@@ -34,7 +35,7 @@ export const statisticDailyReportByClass = async (req: Request, res: Response) =
         });
 
         const reportMap = new Map<number, Set<string>>();
-        for (const report of reportData as any[]) {
+        for (const report of reportData) {
             const classId = report.class_id;
             const dateReport = new Date(report.date_report).toISOString().split('T')[0];
 
@@ -79,7 +80,7 @@ export const statisticDailyReportByTeacher = async (req: Request, res: Response)
                 },
                 ...(schoolID && {school_id: schoolID}),
             }
-        });
+        }) as unknown as PgStatisticsByClassItf[];
 
         const dataTeacher = await Teacher.findAll({
             where: {school_id: schoolID},
@@ -88,10 +89,10 @@ export const statisticDailyReportByTeacher = async (req: Request, res: Response)
                 as: 'teachers',
                 attributes: ['id', 'name']
             }]
-        });
+        }) as unknown as teacherAttributes[];
 
         const reportMap = new Map<number, Set<string>>();
-        for (const report of reportData as any[]) {
+        for (const report of reportData) {
             const teacherId = report.teacher_id;
             const dateReport = new Date(report.date_report).toISOString();
 
@@ -102,7 +103,7 @@ export const statisticDailyReportByTeacher = async (req: Request, res: Response)
             reportMap.get(teacherId)?.add(dateReport);
         }
 
-        const result = (dataTeacher as any[]).map(teacher => {
+        const result = dataTeacher.map(teacher => {
             const teacherUser = teacher.teachers;
             const reportDays = reportMap.get(teacher.user_id)?.size || 0;
 
@@ -137,11 +138,11 @@ export const getSystemStatistic = async (req: Request, res: Response): Promise<a
                     [Op.between]: [startDate, endDate]
                 }
             }
-        });
+        }) as unknown as PgStatisticsByClassItf[];
 
-        const dataSchool: any[] = await School.findAll({
+        const dataSchool = await School.findAll({
             attributes: ['id', 'name'],
-        });
+        }) as unknown as schoolAttributes[];
 
         const schoolMap = new Map<number, string>();
         for (const school of dataSchool) {
@@ -192,7 +193,7 @@ export const reportViewByClass = async (req: Request, res: Response): Promise<an
         const schoolID = parseInt(req.query.school_id as string, 10);
 
         if (isNaN(schoolID) || isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-            return res.status(400).json({ error_code: 1, message: 'Invalid or empty report list' });
+            return res.status(400).json({error_code: 1, message: 'Invalid or empty report list'});
         }
 
         const reportData = await PgCommentViews.findAll({
@@ -200,17 +201,17 @@ export const reportViewByClass = async (req: Request, res: Response): Promise<an
                 view_date: {
                     [Op.between]: [startDate, endDate]
                 },
-                ...(schoolID && { school_id: schoolID }),
+                ...(schoolID && {school_id: schoolID}),
             }
-        });
+        }) as unknown as PgCommentViewsItf[];
 
         const classInfo = await Class.findAll({
-            where: { school_id: schoolID },
+            where: {school_id: schoolID},
             attributes: ['id', 'name']
         });
 
         const classViewMap = new Map<number, number>();
-        for (const report of reportData as any[]) {
+        for (const report of reportData) {
             const classId = report.class_id;
             classViewMap.set(classId, (classViewMap.get(classId) || 0) + 1);
         }
@@ -227,6 +228,6 @@ export const reportViewByClass = async (req: Request, res: Response): Promise<an
         sendData(res, result, 'Success');
     } catch (error) {
         console.error(error);
-        res.status(500).json({ error_code: 1, message: 'Failed' });
+        res.status(500).json({error_code: 1, message: 'Failed'});
     }
 };

@@ -1,182 +1,181 @@
 import {Request, Response} from 'express';
-import {getCollection} from '../config/mongo';
 import {sendData} from "../ultil/ultil";
-import {Student} from '../models/student';
-import {Class} from '../models/class';
+import {Student, studentAttributes} from '../models/student';
+import {Class, class_Attributes} from '../models/class';
 import {User} from '../models/users';
-import {School} from '../models/school';
+import {School, schoolAttributes} from '../models/school';
 import '../models/associations';
-import {PgStatisticsByClass} from '../models/postgres/PgStatisticsByClass';
 import {PgCommentViews} from '../models/postgres/PgCommentViews';
+import DailyReport, {IDailyReport} from "../models/mongo/dailyReport";
+import {SendDailyReportInput} from "./Interface";
+import {statisticsEmitter} from '../events/dailyReportEvent';
 
 //gửi nhận xét hàng ngày
 export const sendDailyReport = async (req: Request, res: Response): Promise<any> => {
     try {
-        const reports = req.body;
+        const reports = req.body as SendDailyReportInput[];
 
-        if (!Array.isArray(reports) || reports.length === 0 || isNaN(reports[0].student_id)) {
-            res.status(400).json({error_code: 1, message: 'Invalid or empty report list'});
+        if (!Array.isArray(reports) || reports.length === 0) {
+            return res.status(400).json({error_code: 1, message: 'Invalid or empty report list'});
         }
 
-        const collection = await getCollection('daily_report');
-        const insertedResults = [];
+        const now = new Date();
+        const classIds = [...new Set(reports.map(r => r.class_id))];
+        const classList = await Class.findAll({where: {id: classIds}}) as unknown as class_Attributes[];
+        const classMap = new Map<number, any>();
+        classList.forEach(cls => classMap.set(cls.id, cls));
+
+        const bulkOps = [];
+        const statistics = [];
 
         for (const report of reports) {
-            try {
-                const existing = await collection.findOne({
-                    student_id: report.student_id,
-                    date_report: new Date(report.date_report),
-                    teacher_id: report.teacher_id
-                });
+            const {
+                student_id,
+                date_report,
+                teacher_id,
+                class_id,
+                study_report,
+                other_report
+            } = report;
 
-                if (existing) {
-                    const updateFields: any = {};
+            const dataClass = classMap.get(class_id);
+            if (!dataClass) continue;
 
-                    if (report.study_report !== undefined) updateFields.study_report = report.study_report;
-                    if (report.other_report !== undefined) updateFields.other_report = report.other_report;
+            const filter = {
+                student_id,
+                teacher_id,
+                date_report: new Date(date_report)
+            };
 
-                    await collection.findOneAndUpdate(
-                        {_id: existing._id},
-                        {$set: updateFields},
-                        {returnDocument: 'after'}
-                    );
-
-                    insertedResults.push({success: true, type: 'updated', _id: existing._id});
-                } else {
-                    const dataClass: any = await Class.findOne({
-                        where: {id: report.class_id}
-                    })
-                    if (!dataClass) {
-                        res.status(400).json({error_code: 1, message: 'not found class'});
-                    } else {
-                        const result = await collection.insertOne({
-                            study_report: report.study_report,
-                            other_report: report.other_report,
-                            date_report: new Date(report.date_report),
-                            student_id: report.student_id,
-                            teacher_id: report.teacher_id,
-                            class_id: report.class_id,
-                            create_datetime: new Date(),
-                            update_datetime: new Date(),
-                        });
-
-                        await PgStatisticsByClass.create({
-                            class_id: report.class_id,
-                            teacher_id: report.teacher_id,
-                            school_id: dataClass.school_id,
-                            date_report: new Date(report.date_report),
-                            create_datetime: new Date(),
-                            update_datetime: new Date(),
-                        });
-
-                        insertedResults.push({success: true, type: 'inserted', insertedId: result.insertedId});
-                    }
+            const update = {
+                $set: {
+                    class_id,
+                    study_report,
+                    other_report,
+                    update_datetime: now
+                },
+                $setOnInsert: {
+                    create_datetime: now
                 }
-            } catch (err) {
-                insertedResults.push({success: false, error: 'Failed to insert reports', report});
-            }
+            };
+
+            bulkOps.push({
+                updateOne: {
+                    filter,
+                    update,
+                    upsert: true
+                }
+            });
+
+            statistics.push({
+                class_id,
+                teacher_id,
+                school_id: dataClass.school_id,
+                date_report
+            });
         }
-        sendData(res, insertedResults, 'Insert process completed');
+
+        if (bulkOps.length === 0) {
+            return res.status(400).json({error_code: 2, message: 'No valid reports to process'});
+        }
+        const result = await DailyReport.bulkWrite(bulkOps);
+        statistics.forEach(stat => {
+            statisticsEmitter.emit('create-statistics', stat);
+        });
+        sendData(res, result, 'Bulk upsert completed');
     } catch (error) {
-        res.status(500).json({error_code: 1, message: 'Failed'});
+        console.error('Unexpected error in sendDailyReport:', error);
+        res.status(500).json({error_code: 1, message: 'Internal server error'});
     }
 };
 
+
 //phụ huynh xem nhận xét hàng ngày
-export const getDailyReportsByParent = async (req: Request, res: Response): Promise<any> => {
+export const getDailyReportsByParent = async (req: Request, res: Response): Promise<void> => {
     try {
         const studentId = parseInt(req.query.student_id as string, 10);
         const dateReport = new Date(req.query.date_report as string);
+
         if (isNaN(studentId) || isNaN(dateReport.getTime())) {
-            return res.status(400).json({
+            res.status(400).json({
                 error_code: 1,
-                message: 'Invalid query parameters'
+                message: 'Invalid query parameters',
             });
+            return;
         }
 
-        const collection = await getCollection('daily_report');
-        const reports = await collection.find(
-            {
-                student_id: studentId,
-                date_report: dateReport
-            },
-            {
-                projection: {
-                    _id: 0,
-                    class_id: 1,
-                    teacher_id: 1,
-                    study_report: 1,
-                    other_report: 1,
-                    date_report: 1
-                }
-            }
-        ).toArray();
+        const reports = await DailyReport.find({
+            student_id: studentId,
+            date_report: dateReport,
+        }).lean();
 
         if (!reports || reports.length === 0) {
-            return res.status(404).json({error_code: 2, message: 'No reports found'});
-        } else {
-            const teacherIDs = reports.map(r => r.teacher_id);
-            const [teachers] = await Promise.all([
-                User.findAll({where: {id: teacherIDs}, attributes: ['name', 'id']})
-            ]);
-
-            const teacherMap = new Map<number, any>();
-            teachers.forEach((s: any) => {
-                teacherMap.set(Number(s.id), s);
-            });
-
-            const dataReports = reports.map(r => ({
-                ...r,
-                teacher: teacherMap.get(r.teacher_id) || null
-            }));
-
-            const dataStudent: any = await Student.findOne({
-                where: {id: studentId},
-            })
-            const dataCommentView = await PgCommentViews.findOne({
-                where: {
-                    class_id: dataStudent.class_id,
-                    school_id: dataStudent.school_id,
-                    view_date: dateReport,
-                }
-            })
-            console.log('ạhsdkjsahdk', dataCommentView)
-            if (!dataCommentView) {
-                await PgCommentViews.create({
-                    class_id: dataStudent.class_id,
-                    student_id: studentId,
-                    school_id: dataStudent.school_id,
-                    view_date: new Date(),
-                    create_datetime: new Date(),
-                    update_datetime: new Date(),
-                })
-            }
-            sendData(res, dataReports, 'Success');
+            res.status(404).json({error_code: 2, message: 'No reports found'});
+            return;
         }
+
+        const teacherIDs = reports.map((r) => r.teacher_id);
+
+        const [teachers, dataStudent] = await Promise.all([
+            User.findAll({
+                where: {id: teacherIDs},
+                attributes: ['name', 'id'],
+                raw: true,
+            }),
+            Student.findOne({where: {id: studentId}, raw: true}) as unknown as studentAttributes,
+        ]);
+
+        const teacherMap = new Map<number, any>();
+        teachers.forEach((t: any) => {
+            teacherMap.set(Number(t.id), t);
+        });
+
+        const dataReports = reports.map((r) => ({
+            ...r,
+            teacher: teacherMap.get(r.teacher_id) || null,
+        }));
+
+        const dataCommentView = await PgCommentViews.findOne({
+            where: {
+                class_id: dataStudent.class_id,
+                school_id: dataStudent.school_id,
+                view_date: dateReport,
+            },
+        });
+        if (!dataCommentView) {
+            statisticsEmitter.emit('create-comment-view', {
+                class_id: dataStudent.class_id,
+                student_id: studentId,
+                school_id: dataStudent.school_id,
+                view_date: new Date(),
+                create_datetime: new Date(),
+                update_datetime: new Date(),
+            });
+        }
+
+        sendData(res, dataReports, 'Success');
     } catch (error) {
-        console.log(error)
+        console.error('getDailyReportsByParent error:', error);
         res.status(500).json({error_code: 1, message: 'Failed'});
     }
 };
 
 
 //giáo viên xem nhận xét hàng ngày
-export const getDailyReportsByTeacher = async (req: Request, res: Response): Promise<any> => {
+export const getDailyReportsByTeacher = async (req: Request, res: Response): Promise<void> => {
     try {
         const classID = parseInt(req.query.class_id as string, 10);
         const teacherID = parseInt(req.query.teacher_id as string, 10);
         const dateReport = new Date(req.query.date_report as string);
 
         if (isNaN(classID) || isNaN(teacherID) || isNaN(dateReport.getTime())) {
-            return res.status(400).json({
+            res.status(400).json({
                 error_code: 1,
                 message: 'Invalid query parameters'
             });
         }
 
-        const collection = await getCollection('daily_report');
-
-        const dataClass: any = await Class.findOne({
+        const dataClass = await Class.findOne({
             where: {id: classID},
             attributes: ['id', 'name'],
             include: [
@@ -186,24 +185,24 @@ export const getDailyReportsByTeacher = async (req: Request, res: Response): Pro
                     attributes: ['id', 'full_name', 'birthday'],
                 }
             ]
-        });
+        }) as unknown as class_Attributes;
 
         if (!dataClass || !dataClass.students) {
-            return res.status(404).json({error_code: 2, message: 'Class not found or no students'});
+            res.status(404).json({error_code: 2, message: 'Class not found or no students'});
         }
 
-        const reports = await collection.find({
+        const reports = await DailyReport.find({
             teacher_id: teacherID,
             class_id: classID,
             date_report: dateReport
-        }).toArray();
+        }) as unknown as IDailyReport[];
 
         const reportMap = new Map<number, any>();
         reports.forEach(r => {
             reportMap.set(r.student_id, r);
         });
 
-        const result = dataClass.students.map((student: any) => {
+        const result = dataClass.students.map(student => {
             const report = reportMap.get(student.id);
             return {
                 student_id: student.id,
@@ -221,21 +220,20 @@ export const getDailyReportsByTeacher = async (req: Request, res: Response): Pro
 };
 
 //lãnh đạo xem thống kê nhận xét hàng ngày của từng lớp
-export const getDailyReportsByPrincipal = async (req: Request, res: Response): Promise<any> => {
+export const getDailyReportsByPrincipal = async (req: Request, res: Response): Promise<void> => {
     try {
         const dateReport = new Date(req.query.date_report as string);
         const userID = parseInt(req.query.user_id as string, 10);
         const schoolID = parseInt(req.query.school_id as string, 10);
-        const collection = await getCollection('daily_report');
 
         if (isNaN(userID) || isNaN(dateReport.getTime()) || isNaN(schoolID)) {
-            return res.status(400).json({
+            res.status(400).json({
                 error_code: 1,
                 message: 'Invalid query parameters'
             });
         }
 
-        const dataClass: any = await School.findOne({
+        const schoolData = await School.findOne({
             where: {id: schoolID},
             attributes: ['id', 'name'],
             include: [
@@ -261,46 +259,59 @@ export const getDailyReportsByPrincipal = async (req: Request, res: Response): P
             ]
         });
 
-        if (!dataClass) {
-            return res.status(404).json({error_code: 2, message: 'School not found or no classes'});
+        if (!schoolData) {
+            res.status(404).json({error_code: 2, message: 'School not found or no classes'});
+            return;
         }
 
-        const dataJSON = dataClass.toJSON();
-        const classList = dataJSON.class || [];
+        const schoolObj = schoolData.toJSON() as schoolAttributes;
 
-        let totalReviewed = 0;
+        const classList = schoolObj.class || [];
+        const classIds = classList.map((cls: any) => cls.id);
 
-        const reviewedMap = await Promise.all(
-            classList.map(async (cls: any) => {
-                const count = await collection.countDocuments({
-                    class_id: cls.id,
+        const reportStats = await DailyReport.aggregate([
+            {
+                $match: {
+                    class_id: {$in: classIds},
                     date_report: dateReport
-                });
-                totalReviewed += count;
-                return {
-                    ...cls,
-                    student_reviewed: count
-                };
-            })
-        );
-
-        const studentCount = await Student.count({
-            where: {
-                school_id: dataJSON.id
+                }
+            },
+            {
+                $group: {
+                    _id: "$class_id",
+                    count: {$sum: 1}
+                }
             }
+        ]);
+
+        const reportMap = new Map<number, number>();
+        reportStats.forEach(stat => {
+            reportMap.set(stat._id, stat.count);
         });
 
+        const reviewedClasses = classList.map(cls => {
+            const reviewed = reportMap.get(cls.id) || 0;
+            return {
+                ...cls,
+                student_reviewed: reviewed
+            };
+        });
+
+        const studentCount = await Student.count({where: {school_id: schoolObj.id}});
+
+        const totalReviewed = reportStats.reduce((sum, stat) => sum + stat.count, 0);
+
         const result = {
-            id: dataJSON.id,
-            name: dataJSON.name,
+            id: schoolObj.id,
+            name: schoolObj.name,
             total_student: studentCount,
             student_reviewed: totalReviewed,
-            class: reviewedMap
+            class: reviewedClasses
         };
 
         sendData(res, result, 'Success');
     } catch (error) {
+        console.error('Error in getDailyReportsByPrincipal:', error);
         res.status(500).json({error_code: 1, message: 'Failed'});
     }
 };
-

@@ -1,28 +1,27 @@
 import {Request, Response} from 'express';
-import {getCollection} from '../config/mongo';
 import {sendData, sendError} from '../ultil/ultil';
 import {ObjectId} from 'mongodb';
+import Suggest from "../models/mongo/suggest";
 
 //lấy danh sách gợi ý từng giáo viên
-export const getSuggestByTeacher = async (req: Request, res: Response): Promise<any> => {
+export const getSuggestByTeacher = async (req: Request, res: Response): Promise<void> => {
     try {
-        const collection = await getCollection('suggest');
         const type = parseInt(req.query.type as string);
         const teacherId = parseInt(req.query.teacher_id as string);
         if (isNaN(teacherId) || isNaN(type)) {
-            return res.status(400).json({
+            res.status(400).json({
                 error_code: 1,
                 message: 'Invalid query parameters'
             });
         }
 
-        const data = await collection.find({
+        const data = await Suggest.find({
             type: type,
             $or: [
                 {teacher_id: teacherId},
                 {is_default: 0},
             ]
-        }).toArray();
+        });
 
         res.json({error_code: 0, data: data, message: 'Success'});
     } catch (error) {
@@ -34,10 +33,9 @@ export const getSuggestByTeacher = async (req: Request, res: Response): Promise<
 //tạo gợi ý cho giáo viên
 export const createSuggestByTeacher = async (req: Request, res: Response): Promise<void> => {
     try {
-        const collection = await getCollection('suggest');
         const {text, teacher_id, type} = req.body;
 
-        const result = await collection.insertOne({
+        const result = await Suggest.insertOne({
             text: text,
             teacher_id: teacher_id,
             type: type,
@@ -56,11 +54,10 @@ export const createSuggestByTeacher = async (req: Request, res: Response): Promi
 // cập nhật gợi ý giáo viên
 export const updateSuggestByTeacher = async (req: Request, res: Response): Promise<void> => {
     try {
-        const collection = await getCollection('suggest');
         const id = req.body._id;
         const {text} = req.body;
 
-        const result = await collection.findOneAndUpdate(
+        const result = await Suggest.findOneAndUpdate(
             {_id: new ObjectId(id)},
             {
                 $set: {
@@ -95,8 +92,7 @@ export const deleteSuggestByTeacher = async (req: Request, res: Response): Promi
             res.status(400).json({error_code: 1, message: 'No valid ObjectIds found'});
         }
 
-        const collection = await getCollection('suggest');
-        const result = await collection.deleteMany({_id: {$in: objectIds}});
+        const result = await Suggest.deleteMany({_id: {$in: objectIds}});
 
         if (result.deletedCount === 0) {
             res.status(404).json({error_code: 1, message: 'No suggestions found to delete'});
