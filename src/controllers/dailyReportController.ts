@@ -44,9 +44,6 @@ export const sendDailyReport = async (req: Request, res: Response): Promise<void
                     study_report,
                     other_report,
                     update_datetime: now
-                },
-                $setOnInsert: {
-                    create_datetime: now
                 }
             };
 
@@ -66,7 +63,7 @@ export const sendDailyReport = async (req: Request, res: Response): Promise<void
 
         statisticsEmitter.emit('send-daily-report', {
             class_id: bodyData.class_id,
-            teacher_id: classData.teacher_id,
+            teacher_id: bodyData.teacher_id,
             school_id: classData.school_id,
             date_report: new Date(bodyData.date_report),
         });
