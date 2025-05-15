@@ -1,10 +1,14 @@
 export interface SendDailyReportInput {
-    student_id: number;
     date_report: string;
     teacher_id: number;
     class_id: number;
-    study_report?: string;
-    other_report?: string;
+    reports: [
+        {
+            study_report?: string;
+            other_report?: string;
+            student_id: number;
+        }
+    ],
 }
 
 export interface PgStatisticsByClassItf {

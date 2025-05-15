@@ -11,45 +11,36 @@ import {SendDailyReportInput} from "./Interface";
 import {statisticsEmitter} from '../events/dailyReportEvent';
 
 //gửi nhận xét hàng ngày
-export const sendDailyReport = async (req: Request, res: Response): Promise<any> => {
+export const sendDailyReport = async (req: Request, res: Response): Promise<void> => {
     try {
-        const reports = req.body as SendDailyReportInput[];
+        const bodyData = req.body as SendDailyReportInput;
 
-        if (!Array.isArray(reports) || reports.length === 0) {
-            return res.status(400).json({error_code: 1, message: 'Invalid or empty report list'});
+        if (!bodyData) {
+            res.status(400).json({error_code: 1, message: 'Invalid or empty report list'});
         }
 
         const now = new Date();
-        const classIds = [...new Set(reports.map(r => r.class_id))];
-        const classList = await Class.findAll({where: {id: classIds}}) as unknown as class_Attributes[];
-        const classMap = new Map<number, any>();
-        classList.forEach(cls => classMap.set(cls.id, cls));
+        const classData = await Class.findOne({where: {id: bodyData.class_id}}) as unknown as class_Attributes;
 
         const bulkOps = [];
-        const statistics = [];
 
+        const reports = bodyData.reports;
         for (const report of reports) {
             const {
                 student_id,
-                date_report,
-                teacher_id,
-                class_id,
                 study_report,
                 other_report
             } = report;
 
-            const dataClass = classMap.get(class_id);
-            if (!dataClass) continue;
-
             const filter = {
                 student_id,
-                teacher_id,
-                date_report: new Date(date_report)
+                teacher_id: bodyData.teacher_id,
+                date_report: new Date(bodyData.date_report),
             };
 
             const update = {
                 $set: {
-                    class_id,
+                    class_id: bodyData.class_id,
                     study_report,
                     other_report,
                     update_datetime: now
@@ -66,22 +57,20 @@ export const sendDailyReport = async (req: Request, res: Response): Promise<any>
                     upsert: true
                 }
             });
-
-            statistics.push({
-                class_id,
-                teacher_id,
-                school_id: dataClass.school_id,
-                date_report
-            });
         }
 
         if (bulkOps.length === 0) {
-            return res.status(400).json({error_code: 2, message: 'No valid reports to process'});
+            res.status(400).json({error_code: 2, message: 'No valid reports to process'});
         }
         const result = await DailyReport.bulkWrite(bulkOps);
-        statistics.forEach(stat => {
-            statisticsEmitter.emit('create-statistics', stat);
+
+        statisticsEmitter.emit('create-statistics', {
+            class_id: bodyData.class_id,
+            teacher_id: classData.teacher_id,
+            school_id: classData.school_id,
+            date_report: new Date(bodyData.date_report),
         });
+
         sendData(res, result, 'Bulk upsert completed');
     } catch (error) {
         console.error('Unexpected error in sendDailyReport:', error);
