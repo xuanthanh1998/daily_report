@@ -64,7 +64,7 @@ export const sendDailyReport = async (req: Request, res: Response): Promise<void
         }
         const result = await DailyReport.bulkWrite(bulkOps);
 
-        statisticsEmitter.emit('create-statistics', {
+        statisticsEmitter.emit('send-daily-report', {
             class_id: bodyData.class_id,
             teacher_id: classData.teacher_id,
             school_id: classData.school_id,

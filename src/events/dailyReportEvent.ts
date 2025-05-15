@@ -13,10 +13,10 @@ function isValidCommentViewData(data: PgCommentViewsItf): boolean {
     return !!(data.class_id && data.school_id && data.student_id && data.view_date);
 }
 
-statisticsEmitter.on('create-statistics', async (data: PgStatisticsByClassItf) => {
+statisticsEmitter.on('send-daily-report', async (data: PgStatisticsByClassItf) => {
     try {
         if (!isValidStatisticsData(data)) {
-            console.warn('Invalid statistics data:', data);
+            console.warn('Invalid data:', data);
             return;
         }
         const existingRecord = await PgStatisticsByClass.findOne({
@@ -29,7 +29,7 @@ statisticsEmitter.on('create-statistics', async (data: PgStatisticsByClassItf) =
         });
 
         if (existingRecord) {
-            console.log('Statistics already exist');
+            console.log('data already exist');
             return;
         }
 
@@ -42,9 +42,9 @@ statisticsEmitter.on('create-statistics', async (data: PgStatisticsByClassItf) =
             update_datetime: new Date(),
         });
 
-        console.log('Statistics created');
+        console.log('data created');
     } catch (error) {
-        console.error('Failed to create statistics:', error);
+        console.error('Failed to create data:', error);
     }
 });
 
