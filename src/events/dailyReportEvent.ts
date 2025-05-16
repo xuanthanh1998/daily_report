@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { PgStatisticsByClass } from '../models/postgres/PgStatisticsByClass';
 import { PgCommentViews } from '../models/postgres/PgCommentViews';
 import { PgStatisticsByClassItf, PgCommentViewsItf } from '../controllers/Interface';
+import {kafkaProducer} from "../kafka/kafka";
 
 export const statisticsEmitter = new EventEmitter();
 
@@ -19,30 +20,16 @@ statisticsEmitter.on('send-daily-report', async (data: PgStatisticsByClassItf) =
             console.warn('Invalid data:', data);
             return;
         }
-        const existingRecord = await PgStatisticsByClass.findOne({
-            where: {
-                class_id: data.class_id,
-                teacher_id: data.teacher_id,
-                school_id: data.school_id,
-                date_report: new Date(data.date_report)
-            }
+
+        await kafkaProducer.send({
+            topic: 'statistics-created',
+            messages: [
+                {
+                    key: `${data.class_id}-${data.teacher_id}`,
+                    value: JSON.stringify(data)
+                }
+            ]
         });
-
-        if (existingRecord) {
-            console.log('data already exist');
-            return;
-        }
-
-        await PgStatisticsByClass.create({
-            class_id: data.class_id,
-            teacher_id: data.teacher_id,
-            school_id: data.school_id,
-            date_report: new Date(data.date_report),
-            create_datetime: new Date(),
-            update_datetime: new Date(),
-        });
-
-        console.log('data created');
     } catch (error) {
         console.error('Failed to create data:', error);
     }

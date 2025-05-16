@@ -2,25 +2,23 @@ import { DataTypes } from 'sequelize';
 import { pgSequelize } from '../../config/postgres';
 
 export const PgStatisticsByClass = pgSequelize.define('PgStatisticsByClass', {
-    id: {
-        type: DataTypes.INTEGER,
-        primaryKey: true,
-        autoIncrement: true,
-    },
     class_id: {
         type: DataTypes.INTEGER,
-        allowNull: true,
+        allowNull: false,
+        primaryKey: true,
     },
     teacher_id: {
         type: DataTypes.INTEGER,
-        allowNull: true,
-    },
-    school_id: {
-        type: DataTypes.INTEGER,
-        allowNull: true,
+        allowNull: false,
+        primaryKey: true,
     },
     date_report: {
         type: DataTypes.DATEONLY,
+        allowNull: false,
+        primaryKey: true,
+    },
+    school_id: {
+        type: DataTypes.INTEGER,
         allowNull: true,
     },
     create_datetime: {
@@ -32,7 +30,7 @@ export const PgStatisticsByClass = pgSequelize.define('PgStatisticsByClass', {
         defaultValue: DataTypes.NOW,
     },
 }, {
-    tableName: 'statistics_by_class',
+    tableName: 'statistics_daily_report',
     schema: 'public',
     timestamps: false,
 });
