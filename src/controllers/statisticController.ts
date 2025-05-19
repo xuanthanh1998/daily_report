@@ -128,20 +128,25 @@ export const getSystemStatistic = async (req: Request, res: Response): Promise<v
     try {
         const startDate = new Date(req.query.start_date as string);
         const endDate = new Date(req.query.end_date as string);
+
         if (!startDate || !endDate) {
             res.status(400).json({ error_code: 1, message: 'Missing start_date or end_date' });
+            return;
         }
+
         const data = await pgSequelize.query(
             `
-                SELECT bucket,
-                       school_id,
-                       total_comments
+                SELECT
+                    school_id,
+                    SUM(total_comments) AS total_comments
                 FROM V_TOP5_COMMENT_SCHOOLS_BY_DAY
                 WHERE bucket BETWEEN :start AND :end
-                ORDER BY total_comments DESC LIMIT 5
+                GROUP BY school_id
+                ORDER BY total_comments DESC
+                    LIMIT 5
             `,
             {
-                replacements: {start: startDate, end: endDate},
+                replacements: { start: startDate, end: endDate },
                 type: QueryTypes.SELECT,
             }
         );
@@ -149,7 +154,7 @@ export const getSystemStatistic = async (req: Request, res: Response): Promise<v
         sendData(res, data, 'Success');
     } catch (error) {
         console.error(error);
-        res.status(500).json({error_code: 1, message: 'Failed'});
+        res.status(500).json({ error_code: 1, message: 'Failed' });
     }
 }
 
