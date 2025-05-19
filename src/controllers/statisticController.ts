@@ -5,10 +5,11 @@ import {Teacher, teacherAttributes} from "../models/teacher";
 import {PgStatisticsByClass} from '../models/postgres/PgStatisticsByClass';
 import {School, schoolAttributes} from "../models/school";
 import '../models/associations';
-import {Op} from "sequelize";
+import {Op, QueryTypes} from "sequelize";
 import {Class, class_Attributes} from "../models/class";
 import {PgCommentViews} from "../models/postgres/PgCommentViews";
 import {PgCommentViewsItf, PgStatisticsByClassItf} from "./Interface";
+import {pgSequelize} from "../config/postgres";
 
 //thống kê theo danh sách lớp
 export const statisticDailyReportByClass = async (req: Request, res: Response) => {
@@ -127,63 +128,31 @@ export const getSystemStatistic = async (req: Request, res: Response): Promise<v
     try {
         const startDate = new Date(req.query.start_date as string);
         const endDate = new Date(req.query.end_date as string);
-
-        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-            res.status(400).json({error_code: 1, message: 'Invalid date range'});
+        if (!startDate || !endDate) {
+            res.status(400).json({ error_code: 1, message: 'Missing start_date or end_date' });
         }
-
-        const reportData = await PgStatisticsByClass.findAll({
-            where: {
-                date_report: {
-                    [Op.between]: [startDate, endDate]
-                }
+        const data = await pgSequelize.query(
+            `
+                SELECT bucket,
+                       school_id,
+                       total_comments
+                FROM V_TOP5_COMMENT_SCHOOLS_BY_DAY
+                WHERE bucket BETWEEN :start AND :end
+                ORDER BY total_comments DESC LIMIT 5
+            `,
+            {
+                replacements: {start: startDate, end: endDate},
+                type: QueryTypes.SELECT,
             }
-        }) as unknown as PgStatisticsByClassItf[];
+        );
 
-        const dataSchool = await School.findAll({
-            attributes: ['id', 'name'],
-        }) as unknown as schoolAttributes[];
-
-        const schoolMap = new Map<number, string>();
-        for (const school of dataSchool) {
-            schoolMap.set(school.id, school.name);
-        }
-
-        const uniqueReportSet = new Set<string>();
-        const schoolCountMap = new Map<number, { school_name: string; count: number }>();
-
-        for (const report of reportData) {
-            const key = `${report.school_id}-${report.teacher_id}-${report.class_id}-${new Date(report.date_report).toISOString().split('T')[0]}`;
-
-            if (!uniqueReportSet.has(key)) {
-                uniqueReportSet.add(key);
-
-                const schoolId = report.school_id;
-                const schoolName = schoolMap.get(schoolId) || 'Unknown';
-
-                if (!schoolCountMap.has(schoolId)) {
-                    schoolCountMap.set(schoolId, {school_name: schoolName, count: 0});
-                }
-
-                schoolCountMap.get(schoolId)!.count += 1;
-            }
-        }
-
-        const topSchools = Array.from(schoolCountMap.entries())
-            .sort((a, b) => b[1].count - a[1].count)
-            .slice(0, 5)
-            .map(([school_id, data]) => ({
-                school_id,
-                school_name: data.school_name,
-                report_count: data.count
-            }));
-
-        sendData(res, topSchools, 'Top 5 schools with most reports');
+        sendData(res, data, 'Success');
     } catch (error) {
         console.error(error);
-        res.status(500).json({error_code: 1, message: 'Failed to get top schools'});
+        res.status(500).json({error_code: 1, message: 'Failed'});
     }
-};
+}
+
 
 //thống kê lượt xem theo danh sách lớp
 export const reportViewByClass = async (req: Request, res: Response): Promise<any> => {
