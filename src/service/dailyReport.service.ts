@@ -9,14 +9,14 @@ const statisticsQueue = new Queue('statisticsQueue', {
 });
 
 statisticsQueue.process(async (job) => {
-    const data: PgStatisticsByClassItf = job.data;
-
-    if (!data.class_id || !data.teacher_id || !data.school_id || !data.date_report) {
-        console.warn('Invalid statistics data:', data);
-        return;
-    }
-
     try {
+        const data: PgStatisticsByClassItf = job.data;
+
+        if (!data.class_id || !data.teacher_id || !data.school_id || !data.date_report) {
+            console.warn('Invalid statistics data:', data);
+            return;
+        }
+
         const [record, created] = await PgStatisticsByClass.findOrCreate({
             where: {
                 class_id: data.class_id,
