@@ -3,8 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "tsc && node dist/server.js",
-    "dev": "nodemon"
+    "start:api": "ts-node src/server/api/server.ts",
+    "start:kafka": "ts-node src/server/kafka/server.ts",
+    "start:worker": "ts-node src/queue/worker.ts"
   },
   "keywords": [],
   "author": "",
